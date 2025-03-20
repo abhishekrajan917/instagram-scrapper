@@ -94,6 +94,7 @@
         
         <div id="loading" class="hidden flex items-center justify-center py-8">
           <div class="loader ease-linear rounded-full border-4 border-t-4 border-gray-200 h-12 w-12"></div>
+          <p class="ml-4 text-gray-600">This may take up to 30 seconds...</p>
         </div>
         
         <div id="results" class="hidden">
@@ -117,6 +118,15 @@
         </div>
         
         <div id="error" class="hidden mt-4 p-3 bg-red-100 text-red-700 rounded-md"></div>
+        <div id="tips" class="hidden mt-4">
+          <h3 class="text-sm font-semibold text-gray-700 mb-2">Troubleshooting Tips:</h3>
+          <ul class="text-xs text-gray-600 list-disc pl-5 space-y-1">
+            <li>Try using Instagram login credentials for better results</li>
+            <li>Instagram often blocks automated access - try again later</li>
+            <li>Make sure the post URL is correct and publicly accessible</li>
+            <li>Try a different post that's more recent</li>
+          </ul>
+        </div>
       </div>
       
       <div class="text-center text-sm text-gray-500">
@@ -183,6 +193,14 @@
             })
           });
           
+          // Check if the response is JSON before parsing
+          const contentType = response.headers.get('content-type');
+          if (!contentType || !contentType.includes('application/json')) {
+            // Handle non-JSON response
+            const textResponse = await response.text();
+            throw new Error(`Server returned non-JSON response: ${textResponse.substring(0, 100)}...`);
+          }
+          
           const data = await response.json();
           
           if (!data.success) {
@@ -216,7 +234,24 @@
           results.classList.remove('hidden');
           
         } catch (error) {
-          errorDiv.textContent = error.message || 'Failed to scrape Instagram post';
+          console.error('Scraping error:', error);
+          let errorMessage = error.message || 'Failed to scrape Instagram post';
+          
+          // Check for specific Puppeteer errors and provide more helpful messages
+          if (errorMessage.includes('frame was detached') || 
+              errorMessage.includes('Navigation timeout') ||
+              errorMessage.includes('Attempted to use detached Frame')) {
+            errorMessage = 'Instagram is blocking the scraper. Try using your own credentials, using a different Instagram post, or try again later.';
+            document.getElementById('tips').classList.remove('hidden');
+          } else if (errorMessage.includes('net::ERR_')) {
+            errorMessage = 'Network error: Check your internet connection and try again.';
+          } else if (errorMessage.includes('Protocol error')) {
+            errorMessage = 'Browser communication error: Instagram may have changed their site or is blocking access.';
+            document.getElementById('tips').classList.remove('hidden');
+          }
+          
+          // Display the error message
+          errorDiv.textContent = errorMessage;
           errorDiv.classList.remove('hidden');
         } finally {
           loading.classList.add('hidden');
