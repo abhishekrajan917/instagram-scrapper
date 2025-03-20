@@ -21,6 +21,9 @@ const HEADLESS_MODE = false; // Always use visible browser to avoid detection
 // Max retry attempts for navigation
 const MAX_RETRIES = 3;
 
+// Default pause time between actions
+const DEFAULT_PAUSE = 3000;
+
 // Simple random delay function to make behavior more human-like
 const randomDelay = (min, max) => new Promise(resolve => {
   const delay = Math.floor(Math.random() * (max - min + 1)) + min;
@@ -48,6 +51,42 @@ async function saveCookies(cookies) {
     console.log('Cookies saved successfully');
   } catch (error) {
     console.log('Error saving cookies:', error.message);
+  }
+}
+
+// Enhanced function to safely navigate to a page
+async function safeNavigation(page, url, options = {}) {
+  const defaultOptions = {
+    waitUntil: 'domcontentloaded',
+    timeout: 60000
+  };
+  
+  const navOptions = { ...defaultOptions, ...options };
+  
+  try {
+    console.log(`Navigating to ${url}...`);
+    await page.goto(url, navOptions);
+    
+    // Wait to ensure content loads
+    await randomDelay(3000, 5000);
+    
+    return true;
+  } catch (error) {
+    console.log(`Navigation error: ${error.message}`);
+    
+    // Try a simpler navigation approach for recovery
+    try {
+      console.log('Trying alternative navigation method...');
+      await page.goto('about:blank');
+      await randomDelay(1000, 2000);
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      await randomDelay(3000, 5000);
+      
+      return true;
+    } catch (retryError) {
+      console.log(`Alternative navigation also failed: ${retryError.message}`);
+      return false;
+    }
   }
 }
 
@@ -190,10 +229,9 @@ async function scrapeVerifiedAccounts(postUrl, useCredentials = true) {
           try {
             // Use a gentler navigation approach
             console.log('Navigating to Instagram home page...');
-            await page.goto('https://www.instagram.com/', { 
-              waitUntil: 'domcontentloaded',
-              timeout: 60000
-            });
+            if (!await safeNavigation(page, 'https://www.instagram.com/')) {
+              throw new Error('Failed to navigate to Instagram home page');
+            }
             
             // Random delay before clicking login
             await randomDelay(2000, 5000);
@@ -301,42 +339,22 @@ async function scrapeVerifiedAccounts(postUrl, useCredentials = true) {
         
         console.log(`Navigating to ${postUrl}...`);
         
-        try {
-          // First try a slow, cautious navigation
-          await page.goto(postUrl, { 
-            waitUntil: 'domcontentloaded',
-            timeout: 60000
-          });
-          
-          // Wait for some content to load
-          await randomDelay(5000, 8000);
-          
-          console.log('Initial page load complete, waiting for full content...');
-          
-          // Check if we're actually on the post page
-          const isPostPage = await page.evaluate(() => {
-            return !!document.querySelector('article') || 
-                  window.location.href.includes('/p/');
-          });
-          
-          if (!isPostPage) {
-            console.log('Not on post page, may be redirected or blocked. Trying alternative method...');
-            
-            // Try to directly access the post with a different approach
-            await page.goto('https://www.instagram.com/', { waitUntil: 'domcontentloaded' });
-            await randomDelay(3000, 5000);
-            
-            // Now try the post URL again
-            await page.goto(postUrl, { waitUntil: 'networkidle2', timeout: 90000 });
-          }
-          
-          // Wait a bit more to ensure page loads
+        let navigationSuccess = await safeNavigation(page, postUrl, { 
+          waitUntil: 'domcontentloaded',
+          timeout: 60000 
+        });
+        
+        if (!navigationSuccess) {
+          // If direct navigation fails, try going to Instagram home first then to the post
+          console.log('Trying navigation via homepage...');
+          await safeNavigation(page, 'https://www.instagram.com/');
           await randomDelay(3000, 5000);
           
-          console.log('Page loaded successfully');
-        } catch (navigationError) {
-          console.log(`Navigation failed with error: ${navigationError.message}`);
-          throw navigationError; // Let the retry mechanism handle this
+          navigationSuccess = await safeNavigation(page, postUrl);
+        }
+        
+        if (!navigationSuccess) {
+          throw new Error('Failed to navigate to Instagram post after multiple attempts');
         }
         
         // Extract page title for debugging
@@ -874,6 +892,83 @@ app.post('/api/scrape', async (req, res, next) => {
     console.error('Server error:', error);
     // Use next() to pass to the error handler middleware instead of handling here
     next(error);
+  }
+});
+
+// Add a simple diagnostic endpoint
+app.get('/api/test', async (req, res) => {
+  console.log("Running Instagram connectivity test");
+  
+  let browser = null;
+  try {
+    // Launch browser with stealth plugin
+    browser = await puppeteerExtra.launch({
+      headless: HEADLESS_MODE,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--window-size=1280,800'
+      ],
+      defaultViewport: null
+    });
+    
+    const page = await browser.newPage();
+    
+    // Set default user agent
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
+    
+    // Try to navigate to Instagram
+    const success = await safeNavigation(page, 'https://www.instagram.com/');
+    
+    if (!success) {
+      throw new Error('Could not navigate to Instagram');
+    }
+    
+    // Wait and take screenshot for debugging
+    await page.screenshot({ path: 'instagram-test.png', fullPage: false });
+    
+    // Check if we're actually on Instagram
+    const title = await page.title();
+    const url = page.url();
+    
+    // Check for signs of being blocked
+    const isBlocked = await page.evaluate(() => {
+      return document.body.textContent.includes('suspicious activity') || 
+             document.body.textContent.includes('unusual traffic');
+    });
+    
+    // Close browser
+    await browser.close();
+    
+    return res.json({
+      success: true,
+      status: {
+        title,
+        url,
+        isBlocked,
+        timestamp: new Date().toISOString()
+      },
+      message: isBlocked ? 'Instagram is blocking access - try again later' : 'Connection to Instagram successful'
+    });
+  } catch (error) {
+    console.error('Test error:', error);
+    
+    // Ensure browser is closed
+    if (browser) {
+      try {
+        await browser.close();
+      } catch (e) {
+        console.log('Error closing browser during test:', e.message);
+      }
+    }
+    
+    return res.status(500).json({
+      success: false,
+      error: error.message,
+      message: 'Failed to connect to Instagram'
+    });
   }
 });
 

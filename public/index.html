@@ -84,12 +84,22 @@
             </div>
           </div>
           
-          <button 
-            type="submit" 
-            class="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
-          >
-            Extract Verified Accounts
-          </button>
+          <div class="grid grid-cols-1 gap-2 sm:grid-cols-5">
+            <button 
+              type="submit" 
+              class="sm:col-span-4 bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+            >
+              Extract Verified Accounts
+            </button>
+            
+            <button 
+              type="button" 
+              id="testButton"
+              class="bg-gray-200 text-gray-800 py-2 px-4 rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 transition-colors"
+            >
+              Test
+            </button>
+          </div>
         </form>
         
         <div id="loading" class="hidden flex items-center justify-center py-8">
@@ -276,6 +286,46 @@
             .catch(err => {
               console.error('Failed to copy accounts:', err);
             });
+        }
+      });
+      
+      // Add event listener for test button
+      const testButton = document.getElementById('testButton');
+      testButton.addEventListener('click', async (e) => {
+        e.preventDefault();
+        
+        // Reset UI
+        loading.classList.remove('hidden');
+        results.classList.add('hidden');
+        errorDiv.classList.add('hidden');
+        document.getElementById('tips').classList.add('hidden');
+        
+        try {
+          const response = await fetch('/api/test');
+          const data = await response.json();
+          
+          if (data.success) {
+            errorDiv.classList.remove('hidden');
+            errorDiv.classList.remove('bg-red-100', 'text-red-700');
+            errorDiv.classList.add('bg-green-100', 'text-green-700');
+            errorDiv.textContent = data.message;
+            
+            if (data.status.isBlocked) {
+              document.getElementById('tips').classList.remove('hidden');
+              errorDiv.classList.remove('bg-green-100', 'text-green-700');
+              errorDiv.classList.add('bg-yellow-100', 'text-yellow-700');
+            }
+          } else {
+            throw new Error(data.message);
+          }
+        } catch (error) {
+          errorDiv.classList.remove('hidden');
+          errorDiv.classList.remove('bg-green-100', 'text-green-700');
+          errorDiv.classList.add('bg-red-100', 'text-red-700');
+          errorDiv.textContent = error.message || 'Failed to test Instagram connection';
+          document.getElementById('tips').classList.remove('hidden');
+        } finally {
+          loading.classList.add('hidden');
         }
       });
     });
