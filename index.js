@@ -15,10 +15,13 @@ async function scrapeVerifiedAccounts(postUrl, useCredentials = true) {
   console.log(`Starting scrape for URL: ${postUrl}`);
   
   const browser = await puppeteer.launch({
-    headless: HEADLESS_MODE,
-    args: ['--no-sandbox', '--disable-setuid-sandbox'],
-    // Prevent incognito tab opening
-    ignoreHTTPSErrors: true
+    headless: true,
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--single-process'
+    ]
   });
   
   const page = await browser.newPage();
