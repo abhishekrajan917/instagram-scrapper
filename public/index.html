@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Instagram Verified Comments Scraper</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .loader {
+      border-top-color: #3498db;
+      -webkit-animation: spinner 1.5s linear infinite;
+      animation: spinner 1.5s linear infinite;
+    }
+    
+    @-webkit-keyframes spinner {
+      0% { -webkit-transform: rotate(0deg); }
+      100% { -webkit-transform: rotate(360deg); }
+    }
+    
+    @keyframes spinner {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+  <div class="container mx-auto px-4 py-10">
+    <div class="max-w-xl mx-auto">
+      <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+        <h1 class="text-2xl font-bold text-gray-800 mb-6">Instagram Verified Comments Scraper</h1>
+        
+        <form id="scrapeForm" class="mb-6">
+          <div class="mb-4">
+            <label for="postUrl" class="block text-sm font-medium text-gray-700 mb-1">Instagram Post URL</label>
+            <input 
+              type="url" 
+              id="postUrl" 
+              name="postUrl" 
+              placeholder="https://www.instagram.com/p/CODE/" 
+              class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              required
+            >
+          </div>
+          
+          <div class="mb-4">
+            <div class="flex items-center">
+              <input 
+                type="checkbox" 
+                id="useLogin" 
+                name="useLogin" 
+                class="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+              >
+              <label for="useLogin" class="ml-2 block text-sm text-gray-700">
+                Use Instagram login (recommended for better results)
+              </label>
+            </div>
+          </div>
+          
+          <div id="loginFields" class="mb-4 hidden">
+            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label for="username" class="block text-sm font-medium text-gray-700 mb-1">Instagram Username</label>
+                <input 
+                  type="text" 
+                  id="username" 
+                  name="username" 
+                  placeholder="username" 
+                  class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+              </div>
+              <div>
+                <label for="password" class="block text-sm font-medium text-gray-700 mb-1">Instagram Password</label>
+                <input 
+                  type="password" 
+                  id="password" 
+                  name="password" 
+                  placeholder="password" 
+                  class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+              </div>
+            </div>
+            <div class="mt-2 text-xs text-gray-500">
+              <p>Your credentials are only used for this session and never stored. For security, use a throwaway account.</p>
+            </div>
+          </div>
+          
+          <button 
+            type="submit" 
+            class="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+          >
+            Extract Verified Accounts
+          </button>
+        </form>
+        
+        <div id="loading" class="hidden flex items-center justify-center py-8">
+          <div class="loader ease-linear rounded-full border-4 border-t-4 border-gray-200 h-12 w-12"></div>
+        </div>
+        
+        <div id="results" class="hidden">
+          <div class="flex items-center justify-between mb-3">
+            <h2 class="text-lg font-semibold text-gray-800">Verified Accounts</h2>
+            <span id="accountCount" class="bg-blue-100 text-blue-800 text-xs font-semibold px-2.5 py-0.5 rounded-full">0</span>
+          </div>
+          
+          <div class="border border-gray-200 rounded-md overflow-hidden">
+            <ul id="accountsList" class="divide-y divide-gray-200 max-h-80 overflow-y-auto"></ul>
+          </div>
+          
+          <div class="mt-4 text-right">
+            <button 
+              id="copyButton" 
+              class="text-sm bg-gray-200 hover:bg-gray-300 text-gray-800 py-1 px-3 rounded-md transition-colors"
+            >
+              Copy All
+            </button>
+          </div>
+        </div>
+        
+        <div id="error" class="hidden mt-4 p-3 bg-red-100 text-red-700 rounded-md"></div>
+      </div>
+      
+      <div class="text-center text-sm text-gray-500">
+        <p>Note: Instagram may block automated access after frequent use. Using login credentials improves results.</p>
+      </div>
+    </div>
+  </div>
+  
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const scrapeForm = document.getElementById('scrapeForm');
+      const loading = document.getElementById('loading');
+      const results = document.getElementById('results');
+      const accountsList = document.getElementById('accountsList');
+      const accountCount = document.getElementById('accountCount');
+      const errorDiv = document.getElementById('error');
+      const copyButton = document.getElementById('copyButton');
+      const useLoginCheckbox = document.getElementById('useLogin');
+      const loginFields = document.getElementById('loginFields');
+      
+      // Show/hide login fields based on checkbox
+      useLoginCheckbox.addEventListener('change', () => {
+        loginFields.classList.toggle('hidden', !useLoginCheckbox.checked);
+      });
+      
+      scrapeForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const postUrl = document.getElementById('postUrl').value.trim();
+        const useLogin = useLoginCheckbox.checked;
+        const username = document.getElementById('username').value.trim();
+        const password = document.getElementById('password').value.trim();
+        
+        // Validate URL
+        if (!postUrl.includes('instagram.com/p/')) {
+          errorDiv.textContent = 'Please enter a valid Instagram post URL';
+          errorDiv.classList.remove('hidden');
+          return;
+        }
+        
+        // Validate login if checked
+        if (useLogin && (!username || !password)) {
+          errorDiv.textContent = 'Please enter both username and password to use login';
+          errorDiv.classList.remove('hidden');
+          return;
+        }
+        
+        // Reset UI
+        loading.classList.remove('hidden');
+        results.classList.add('hidden');
+        errorDiv.classList.add('hidden');
+        accountsList.innerHTML = '';
+        
+        try {
+          const response = await fetch('/api/scrape', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ 
+              postUrl, 
+              useLogin,
+              credentials: useLogin ? { username, password } : null
+            })
+          });
+          
+          const data = await response.json();
+          
+          if (!data.success) {
+            throw new Error(data.error);
+          }
+          
+          // Update UI with results
+          const accounts = data.data.verifiedAccounts;
+          
+          if (accounts.length === 0) {
+            accountsList.innerHTML = `
+              <li class="px-4 py-3 text-gray-500">No verified accounts found in the comments.</li>
+            `;
+          } else {
+            accounts.forEach(account => {
+              const listItem = document.createElement('li');
+              listItem.className = 'px-4 py-3 hover:bg-gray-50';
+              listItem.innerHTML = `
+                <div class="flex items-center">
+                  <span class="text-blue-600">@${account}</span>
+                  <svg class="w-4 h-4 ml-1 text-blue-500" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-9.618 5.04C2.127 9.504 2 11.138 2 12c0 5.523 4.477 10 10 10s10-4.477 10-10c0-.862-.126-2.496-.382-4.016z"></path>
+                  </svg>
+                </div>
+              `;
+              accountsList.appendChild(listItem);
+            });
+          }
+          
+          accountCount.textContent = accounts.length;
+          results.classList.remove('hidden');
+          
+        } catch (error) {
+          errorDiv.textContent = error.message || 'Failed to scrape Instagram post';
+          errorDiv.classList.remove('hidden');
+        } finally {
+          loading.classList.add('hidden');
+        }
+      });
+      
+      // Copy accounts to clipboard
+      copyButton.addEventListener('click', () => {
+        const accounts = Array.from(accountsList.querySelectorAll('li span'))
+          .map(span => span.textContent)
+          .join('\n');
+          
+        if (accounts) {
+          navigator.clipboard.writeText(accounts)
+            .then(() => {
+              const originalText = copyButton.textContent;
+              copyButton.textContent = 'Copied!';
+              setTimeout(() => {
+                copyButton.textContent = originalText;
+              }, 2000);
+            })
+            .catch(err => {
+              console.error('Failed to copy accounts:', err);
+            });
+        }
+      });
+    });
+  </script>
+</body>
+</html> 
